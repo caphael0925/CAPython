@@ -38,7 +38,7 @@ while prod>1:
     factors.append(factor)
     prod=prod/factor
 
-print factors
+print list(set(factors))
 
 #def get_next_factor(prod):
 #    if prod in prime:
