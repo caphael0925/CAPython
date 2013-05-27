@@ -4,11 +4,13 @@ my
 @author: Caphael
 '''
 from DBOperator import DBOperator
+from DBOperator import DBConfig
+
 import cx_Oracle
 import os
 from string import Template
 
-class ORAConfig():
+class ORAConfig(DBConfig):
     DB_USERNAME='test'
     DB_PASSWORD='test'
     DB_IPADDR='192.168.136.128'

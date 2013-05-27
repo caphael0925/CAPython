@@ -16,3 +16,5 @@ class DBOperator(object):
         Constructor
         '''
         
+class DBConfig(object):
+    pass

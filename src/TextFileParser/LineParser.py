@@ -5,72 +5,42 @@ Created on 2013-5-22
 @author: caphael
 '''
 
-import ConfigParser
-
-class ConfigParserEX():
-    PARCONFSTR=''
-    CPARSER = ConfigParser.ConfigParser()
-    CONFS = {}
-
-    def __init__(self,parconf):
-        self.PARCONFSTR = parconf
-        
-        self.get=self.CPARSER.get
-        self.getint=self.CPARSER.getint
-        self.getboolean = self.CPARSER.getboolean
-        self.getfloat = self.CPARSER.getfloat
-        
-    def getEX(self,option):
-        return self.get(self.PARCONFSTR,option)
-    
-    def getintEX(self,option):
-        return self.getint(self.PARCONFSTR,option)
-    
-    def getbooleanEX(self,option):
-        return self.getboolean(self.PARCONFSTR,option) 
-
-    def getfloatEX(self,option):
-        return self.getfloat(self.PARCONFSTR,option)
-    
-    def read(self,filenames):
-        return self.CPARSER.read(filenames)
-    
-    def loadConf(self,filenames):
-        self.read(filenames)
-        confnames = self.CPARSER.options(self.PARCONFSTR)
-        for confname in confnames:
-            self.CONFS[confname] = self.getEX(confname)
+import json
+import pprint
+import time
+import copy
+from ConfigParsers.ConfigParserEX import ConfigParserEX
 
 class LineParserBase():
     '''
     classdocs
     '''
-    TYPE='test'      #解析器的配置名称，对应配置文件中的Section
-    CONFPARSER=ConfigParserEX(TYPE)
-                    #配置解析器
+    INSEP = ''
     CONFS = {}         #用于存放配置信息的字典  
-    LINECNT = 0
-    
-    SOURCE = ()
-    TARGET = []    #放数据的元组，维度根据LINECNT而定 
-    
-    DATAPOS = ()      #输出数据在输入行中对应的位置下标，维度根据LINECNT而定
+    METAJSONSTR = ''       #Metadata的Json字符串
+    METADATA = None     #由output_metadata配置字符串生成的字典，格式为json
+    UNIDATEFMT = '%Y-%m-%d %H:%M:%S'    #标准日期格式化字符串
+    COLCNT = 0
+    COLMETA = {}
+#    SOURCE = ()
+    TARGET = []    #放数据的字典
+    DEFMUL_LIMITS = 1000
+    DATAPOS_COL = ()      #输出数据在输入行中对应的位置下标，维度根据LINECNT而定
 
-    def __init__(self,typename):
+    def __init__(self,confparser):
         '''
         Constructor
         '''
-        self.TYPE = typename
-        
-    def getConf(self,filenames = '/home/caphael/workspace/CAPython/conf/LineParsers.conf'):
-        self.CONFPARSER.loadConf(filenames)
-    
-        self.CONFS=self.CONFPARSER.CONFS
+        self.CONFS = confparser.CONFS
         posstr = self.CONFS.get('position_string','UNKNOWN')
         self.parsePos(posstr)
+        self.METAJSONSTR = self.CONFS.get('output_metadata','UNKNOWN')
+        self.INSEP = self.CONFS.get('input_separator')
         
-        print self.DATAPOS
-        print self.CONFS
+        if self.INSEP[0] == '\'':
+            self.INSEP = self.INSEP[1:-1]
+            
+        self.parseMetadata(self.METAJSONSTR)
         
     def parsePos(self,posstr):
         datapos = []
@@ -79,34 +49,80 @@ class LineParserBase():
         for posstrl in posstrs:
             datapos.append(tuple([int(x) for x in posstrl.split(',')]))
         
-        self.DATAPOS = tuple(datapos)
-        self.LINECNT = len(self.DATAPOS)
-        
-    def genContainer(self):
-        pass
-        
-        
-    def parseLine(self,line=''):
-        self.SOURCE = line.split(self.CONFS['input_separator'])
-        self.genTarget()
-    
-    def genTarget(self):
-        for idxrow in self.DATAPOS:
-            row = []
-            for idx in idxrow:
-                row.append(self.SOURCE[idx])
-            self.TARGET.append(row)
+        self.DATAPOS_COL = zip(*tuple(datapos))
+            
+    def parseMetadata(self,mdatastr):
+        self.METADATA = json.loads(mdatastr,encoding='utf8')
+        self.COLMETA = self.METADATA.get('table').get('columns')
+        self.COLCNT = len(self.COLMETA)
 
-    def getOutList(self):
+
+
+    def parseLine(self,line=''):
+        source = line.split(self.INSEP)
+        
+        self.genTarget(source)
+        self.postDealTarget()
+    
+    def parseMultiLine(self,infile,limits = DEFMUL_LIMITS):
+        linesrem = limits
+        self.initTarget()
+        for line in infile:
+            if linesrem <= 0:
+                break
+            source = line.split(self.INSEP)
+            self.genTarget(source)
+            linesrem-=1
+        self.postDealTarget()
+        
+    def postDealTarget(self):
+        
+        for idx,col in enumerate(self.TARGET):
+            colmeta = self.COLMETA[idx]
+            coltype = colmeta.get('type')
+            if coltype == 'datetime':
+                for i in range(len(col)):
+                    col[i] = self.timeNormalize(col[i], colmeta.get('format'))
+#                if coltype not in ('int','float'):
+#                    row[colidx] = "'"+row[colidx]+"'"
+
+    def timeNormalize(self,datestr,ofmt):
+        try:
+            t =  time.mktime(time.strptime(datestr,ofmt))
+            s =  time.strftime(self.UNIDATEFMT,time.localtime(t))
+            return s
+        except Exception,e:
+            print e.message
+            return '0000-00-00 00:00:00'
+        
+    def genTarget(self,source):
+        for i,colidxes in enumerate(self.DATAPOS_COL):
+            col = []
+            for idx in colidxes:
+                col.append(source[idx])
+            self.TARGET[i].extend(col)
+    
+    
+    def initTarget(self):
+        self.TARGET = [[] for i in range(self.COLCNT)]
+    
+    def getOutCList(self):
         return self.TARGET
         
-class LineParserBSMS(LineParserBase):
+    def getOutRList(self):
+        return zip(*self.TARGET)
+    
+    def getColMeta(self):
+        return self.COLMETA
+    
+    def getTableData(self):
+        coldicts = copy.deepcopy(self.COLMETA)
+        for i in range(len(coldicts)):
+            coldicts[i]['data'] = self.TARGET[i]
+        return coldicts
+        
+def test():
     pass
 
-def test():
-    lp=LineParserBase('test')
-    lp.getConf()
-    lp.parseLine('0,1,2,3,4,5,6,7,8,9')
-    print lp.getOutList()
-    
-test()
+if __name__=='__main__':
+    test()
