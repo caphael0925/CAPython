@@ -8,30 +8,13 @@ my
 
 from DBOperator import DBOperator
 import os
-import MySQLdb as dbc
 from TextFileParser.LineParser import LineParserBase
 from ConfigParsers.ConfigParserEX import ConfigParserEX
+import cx_Oracle as dbc
 
 from string import Template
-
-#class MySQLConfig():
-#
-#    
-#    CONFS = None
-#    
-#    def __init__(self,type = 'mysql_statbsms'):
-#        os.environ['NLS_LANG']='AMERICAN_AMERICA.UTF8'
-#        self.CONFPARSER=ConfigParserEX(type,'/home/caphael/workspace/CAPython/conf/DataBaseConn.conf')
-#        self.CONFS = self.CONFPARSER.CONFS
-##        self.CONFS = self.getConf()
-##        
-##    def getConf(self,filename = '/home/caphael/workspace/CAPython/conf/DataBaseConn.conf'):
-##        self.CONFPARSER.loadConf(filename)
-##        return self.CONFPARSER.CONFS
-#        
-        
     
-class MySQLOperator(DBOperator):
+class OracleOperator(DBOperator):
     '''
     classdocs
     '''
@@ -41,8 +24,11 @@ class MySQLOperator(DBOperator):
     IPADDR = ''
     DBNAME = ''
     CONNPOOL = []
+    PORT = 1521
     CONN = None
-    
+    DSN = None
+    UNIDATEFMT = '%Y-%m-%d %H:%M:%S'    
+    STORED_TYPE = 'C'
     
     def __init__(self,confparser):
         '''
@@ -54,12 +40,15 @@ class MySQLOperator(DBOperator):
         self.PASSWORD = confs.get('password')
         self.IPADDR = confs.get('ipaddr')
         self.DBNAME = confs.get('dbname')
+        self.PORT = confs.get('port')
+        self.DSN = dbc.makedsn(self.IPADDR,self.PORT,self.DBNAME)
         self.CONN = self.createConn()
-        
+    
     def createConn(self):
         conn = None
         try:
-            conn = dbc.connect(self.IPADDR, self.USERNAME,self.PASSWORD, self.DBNAME)
+            
+            conn = dbc.connect(self.USERNAME, self.PASSWORD,self.DSN)
             if conn:
                 print 'Connecting is Successful!!'
                 self.CONNPOOL.append(conn)
@@ -69,8 +58,8 @@ class MySQLOperator(DBOperator):
             self.closeConn(conn)
     
     def appendFile2DB(self,infile,cfgparser,conn = None):
-        lineparser = LineParserBase(cfgparser)
-        while lineparser.parseMultiLine(infile, 1000):
+        lineparser = LineParserBase(cfgparser,self.STORED_TYPE)
+        while lineparser.parseMultiLine(infile, 100):
             self.appendDict2DB(lineparser.getTableData(), conn)
     
     def appendDict2DB(self,tabdict,conn = None):
@@ -85,7 +74,7 @@ class MySQLOperator(DBOperator):
         
         tpl_dict['tab'] = tabdict.get('table_name')
         tpl_dict['cols'] = ','.join([cd['column_name'] for cd in colmeta])
-        tpl_dict['vals'] = ','.join(['%s' for i in range(colcnt)])        
+        tpl_dict['vals'] = ','.join([':'+str(i+1) for i in range(colcnt)])        
         
         tpl=Template('insert into ${tab}(${cols}) values(${vals})')
 
@@ -93,7 +82,8 @@ class MySQLOperator(DBOperator):
         
         try:
             cur = conn.cursor()
-            deallines = cur.executemany(sqlstr,data)
+            cur.prepare(sqlstr)
+            deallines = cur.executemany(None,data)
             conn.commit()
             print str(deallines) + ' lines has been inserted!!'
         except Exception,e:
@@ -102,8 +92,7 @@ class MySQLOperator(DBOperator):
 
     def closeConn(self,conn):
         if conn:
-            if conn.open:
-                conn.close()
+            conn.close()
 
     def closeAll(self):
         for conn in self.CONNPOOL :

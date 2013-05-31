@@ -7,7 +7,7 @@ Created on 2013-5-22
 
 import json
 import pprint
-import time
+import datetime
 import copy
 from ConfigParsers.ConfigParserEX import ConfigParserEX
 
@@ -22,15 +22,20 @@ class LineParserBase():
     UNIDATEFMT = '%Y-%m-%d %H:%M:%S'    #标准日期格式化字符串
     COLCNT = 0
     COLMETA = {}
+    TABMETA = {}
 #    SOURCE = ()
     TARGET = []    #放数据的字典
     DEFMUL_LIMITS = 1000
-    DATAPOS_COL = ()      #输出数据在输入行中对应的位置下标，维度根据LINECNT而定
-
-    def __init__(self,confparser):
+    
+    TARGET_TYPE = 'R'  
+    DATAPOS = None
+    #输出数据在输入行中对应的位置下标，维度根据LINECNT而定
+    
+    def __init__(self,confparser,targettype = 'R'):
         '''
         Constructor
         '''
+        self.TARGET_TYPE = targettype
         self.CONFS = confparser.CONFS
         posstr = self.CONFS.get('position_string','UNKNOWN')
         self.parsePos(posstr)
@@ -42,6 +47,8 @@ class LineParserBase():
             
         self.parseMetadata(self.METAJSONSTR)
         
+
+        
     def parsePos(self,posstr):
         datapos = []
         posstrs = posstr.split(';')
@@ -49,14 +56,16 @@ class LineParserBase():
         for posstrl in posstrs:
             datapos.append(tuple([int(x) for x in posstrl.split(',')]))
         
-        self.DATAPOS_COL = zip(*tuple(datapos))
+        if self.TARGET_TYPE == 'R':
+            self.DATAPOS = tuple(datapos)
+        else:
+            self.DATAPOS = zip(*tuple(datapos))
             
     def parseMetadata(self,mdatastr):
         self.METADATA = json.loads(mdatastr,encoding='utf8')
-        self.COLMETA = self.METADATA.get('table').get('columns')
+        self.TABMETA = self.METADATA.get('table')
+        self.COLMETA = self.TABMETA.get('columns')
         self.COLCNT = len(self.COLMETA)
-
-
 
     def parseLine(self,line=''):
         source = line.split(self.INSEP)
@@ -68,15 +77,21 @@ class LineParserBase():
         linesrem = limits
         self.initTarget()
         for line in infile:
-            if linesrem <= 0:
-                break
             source = line.split(self.INSEP)
             self.genTarget(source)
             linesrem-=1
+            if linesrem <= 0:
+                break
         self.postDealTarget()
+        return linesrem != limits
         
     def postDealTarget(self):
+        if self.TARGET_TYPE == 'R':
+            self.postDealTargetByRow()
+        else:
+            self.postDealTargetByColumn()
         
+    def postDealTargetByColumn(self):
         for idx,col in enumerate(self.TARGET):
             colmeta = self.COLMETA[idx]
             coltype = colmeta.get('type')
@@ -86,41 +101,85 @@ class LineParserBase():
 #                if coltype not in ('int','float'):
 #                    row[colidx] = "'"+row[colidx]+"'"
 
+    def postDealTargetByRow(self):
+        for row in self.TARGET:
+            for i,colmeta in enumerate(self.COLMETA):
+                if colmeta.get('type') == 'datetime':
+                    row[i] = self.timeNormalize(row[i], colmeta.get('format'))
+
     def timeNormalize(self,datestr,ofmt):
         try:
-            t =  time.mktime(time.strptime(datestr,ofmt))
-            s =  time.strftime(self.UNIDATEFMT,time.localtime(t))
-            return s
+            t =  datetime.datetime.strptime(datestr,ofmt)
+            return t
         except Exception,e:
             print e.message
-            return '0000-00-00 00:00:00'
-        
-    def genTarget(self,source):
-        for i,colidxes in enumerate(self.DATAPOS_COL):
+            return datetime.datetime.strptime('0001-01-01 00:00:00',ofmt)
+    
+    def genTarget(self,source):    
+        if self.TARGET_TYPE == 'R':
+            self.genTargetByRow(source)
+        else:
+            self.genTargetByColumn(source)
+
+    def genTargetByColumn(self,source):
+        for i,colidxes in enumerate(self.DATAPOS):
             col = []
             for idx in colidxes:
                 col.append(source[idx])
             self.TARGET[i].extend(col)
-    
+
+    def genTargetByRow(self,source):
+        for rpos in self.DATAPOS:
+            row = []
+            for idx in rpos:
+                row.append(source[idx])
+            self.TARGET.append(row)
     
     def initTarget(self):
+        if self.TARGET_TYPE == 'R':
+            self.initTargetByRow()
+        else:
+            self.initTargetByColumn()
+                
+    def initTargetByColumn(self):
         self.TARGET = [[] for i in range(self.COLCNT)]
     
+    def initTargetByRow(self):
+        self.TARGET = []
+    
     def getOutCList(self):
-        return self.TARGET
+        if self.TARGET_TYPE == 'R':
+            return zip(*self.TARGET)
+        else:
+            return self.TARGET
         
     def getOutRList(self):
-        return zip(*self.TARGET)
-    
+        if self.TARGET_TYPE =='R':
+            return self.TARGET
+        else:
+            return zip(*self.TARGET)
+        
     def getColMeta(self):
         return self.COLMETA
     
     def getTableData(self):
-        coldicts = copy.deepcopy(self.COLMETA)
+        if self.TARGET_TYPE == 'R':
+            return self.getTableDataByRow()
+        else:
+            return self.getTableDataByColumn()
+            
+    def getTableDataByColumn(self):
+        tabdict = copy.deepcopy(self.TABMETA)
+        coldicts = tabdict.get('columns')
         for i in range(len(coldicts)):
-            coldicts[i]['data'] = self.TARGET[i]
-        return coldicts
-        
+            coldicts[i]['data'] = self.getOutCList()[i]
+        return tabdict
+
+    def getTableDataByRow(self):
+        tabdict = copy.deepcopy(self.TABMETA)
+        tabdict['row_data'] = self.getOutRList()
+        return tabdict
+
 def test():
     pass
 

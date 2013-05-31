@@ -9,22 +9,6 @@ from DBOperator import DBConfig
 import cx_Oracle
 import os
 from string import Template
-
-class ORAConfig(DBConfig):
-    DB_USERNAME='test'
-    DB_PASSWORD='test'
-    DB_IPADDR='192.168.136.128'
-    DB_PORT=1521
-    DB_NAME='mytest'
-    
-    def get_dsn(self):
-        return cx_Oracle.makedsn(self.DB_IPADDR,self.DB_PORT,self.DB_NAME)
-    
-    DB_DSN=property(get_dsn)
-    
-    def __init__(self):
-        os.environ['NLS_LANG']='AMERICAN_AMERICA.UTF8'
-    
     
 class ORAOperator(DBOperator):
     '''

@@ -9,13 +9,12 @@ import ConfigParser
 
 class ConfigParserEX():
     PARCONFSTR=''
-    CPARSER = ConfigParser.ConfigParser()
     CONFFILE = ''
     CONFS = {}
 
     def __init__(self,parconf,conffile):
         self.PARCONFSTR = parconf
-        
+        self.CPARSER = ConfigParser.ConfigParser()
         self.get=self.CPARSER.get
         self.getint=self.CPARSER.getint
         self.getboolean = self.CPARSER.getboolean
