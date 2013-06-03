@@ -28,13 +28,15 @@ class OracleOperator(DBOperator):
     CONN = None
     DSN = None
     UNIDATEFMT = '%Y-%m-%d %H:%M:%S'    
-    STORED_TYPE = 'C'
+    STORED_STYLE = 'C'
+    LINES_LIMITS = 100
+    PROC_PARAMS = []
     
-    def __init__(self,confparser):
+    def __init__(self,confdict):
         '''
         Constructor
         '''
-        self.CONFS = confparser.CONFS
+        self.CONFS = confdict
         confs = self.CONFS
         self.USERNAME = confs.get('username')
         self.PASSWORD = confs.get('password')
@@ -58,17 +60,50 @@ class OracleOperator(DBOperator):
             self.closeConn(conn)
     
     def appendFile2DB(self,infile,cfgparser,conn = None):
-        lineparser = LineParserBase(cfgparser,self.STORED_TYPE)
-        while lineparser.parseMultiLine(infile, 100):
+        lineparser = LineParserBase(cfgparser,self.STORED_STYLE)
+        while lineparser.parseMultiLine(infile, self.LINES_LIMITS):
             self.appendDict2DB(lineparser.getTableData(), conn)
-    
+
     def appendDict2DB(self,tabdict,conn = None):
+        self.PROC_PARAMS = []
+        
         if not conn:
             conn = self.CONN
         
+        deallines = 0
+        mdata = tabdict.get('mdata')
+        data = tabdict.get('data')
+        
+        if mdata.get('style') == 'R':
+            data = zip(*data)
+    
+        self.PROC_PARAMS.append(str(mdata).replace("u'", "'"))
+        self.PROC_PARAMS.extend(data)
+        
+
+        
+        try:
+            cur = conn.cursor()
+            
+            colmdatas = mdata.get('columns');
+            
+            self.prepareArrayParams(cur,colmdatas)
+
+            cur.callproc('proc_timemark_append',self.PROC_PARAMS)
+            deallines = len(data[0])
+            conn.commit()
+            cur.close()
+        except Exception,e:
+            print e.message
+            self.closeConn(conn)
+        print str(deallines) + ' lines has been inserted!!'
+        
+    def appendRDict2DB_SQL(self,tabdict,conn):
+
+        deallines = 0
         colmeta = tabdict.get('columns')
         colcnt = len(colmeta)
-        data = tabdict.get('row_data')
+        data = tabdict.get('data')
         
         tpl_dict = {}
         
@@ -83,13 +118,56 @@ class OracleOperator(DBOperator):
         try:
             cur = conn.cursor()
             cur.prepare(sqlstr)
-            deallines = cur.executemany(None,data)
+            cur.executemany(None,data)
+            lines = len(data)
             conn.commit()
-            print str(deallines) + ' lines has been inserted!!'
         except Exception,e:
             print e.message
             self.closeConn(conn)
+        print str(deallines) + ' lines has been inserted!!'
+    
+    def updateDict2DB_SQL(self,tabdict,conn = None):
+        
+        self.PROC_PARAMS = []
+        
+        if not conn:
+            conn = self.CONN
+            
+        deallines = 0
+        mdata = tabdict.get('mdata')
+        data = tabdict.get('data')
+        if mdata.get('style') == 'R':
+            data = zip(*data)
+            
+        self.PROC_PARAMS.append(str(mdata).replace("u'", "'"))
+        self.PROC_PARAMS.extend(data)
+        
+        try:
+            cur = conn.cursor()
+            
+            colmdatas = mdata.get('columns');
+            
+            self.prepareArrayParams(cur,colmdatas)
 
+            cur.callproc('proc_timemark_append',self.PROC_PARAMS)
+            deallines = len(data[0])
+            conn.commit()
+            cur.close()
+        except Exception,e:
+            print e.message
+            self.closeConn(conn)
+        print str(deallines) + ' lines has been inserted!!'
+
+    def prepareArrayParams(self,cur,colmdatas):
+        for i,colmdata in enumerate(colmdatas):
+            coltype = colmdata.get('type')
+            if coltype.lower().startswith('date'):
+                cur.arrayvar(dbc.DATETIME,self.PROC_PARAMS[i+1])
+            elif coltype.lower() == 'number':
+                cur.arrayvar(dbc.NUMBER,self.PROC_PARAMS[i+1])
+            else:
+                cur.arrayvar(dbc.STRING,self.PROC_PARAMS[i+1]);
+                    
     def closeConn(self,conn):
         if conn:
             conn.close()

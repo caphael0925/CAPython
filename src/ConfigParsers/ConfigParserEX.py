@@ -4,41 +4,63 @@ Created on 2013-5-23
 @author: caphael
 '''
 
-import ConfigParser
-
+import ConfigParser,pprint
+from CommonUtils.NotFound import NotFound
 
 class ConfigParserEX():
     PARCONFSTR=''
     CONFFILE = ''
     CONFS = {}
+    CPARSER = ConfigParser.ConfigParser()
+    NOTFOUND = NotFound('NotFound')
+    GETFUNCTIONS = []
 
-    def __init__(self,parconf,conffile):
-        self.PARCONFSTR = parconf
-        self.CPARSER = ConfigParser.ConfigParser()
-        self.get=self.CPARSER.get
-        self.getint=self.CPARSER.getint
-        self.getboolean = self.CPARSER.getboolean
-        self.getfloat = self.CPARSER.getfloat
-        
-        self.loadConf(conffile)
-        
-    def getEX(self,option):
-        return self.get(self.PARCONFSTR,option)
     
-    def getintEX(self,option):
-        return self.getint(self.PARCONFSTR,option)
-    
-    def getbooleanEX(self,option):
-        return self.getboolean(self.PARCONFSTR,option) 
+    def __init__(self,*conffiles):
+        self.GETFUNCTIONS = [self.getConfDict,self.getConfDict,self.getSectionDict,self.getOptionDict,self.getNotFound]
+        for conffile in conffiles:
+            self.loadConf(conffile)
 
-    def getfloatEX(self,option):
-        return self.getfloat(self.PARCONFSTR,option)
+    def loadConf(self,filename):
+        self.CPARSER.read(filename)
+        fclsstr = self.CPARSER.get('global','name')
+        confdict = {}
+        self.CONFS[fclsstr] = confdict
+        
+        sections = self.CPARSER.sections()
+        
+        for section in sections:
+            secdict = {}
+            confdict[section] = secdict
+            options = self.CPARSER.options(section)
+            for option in options:
+                secdict[option] = self.CPARSER.get(section, option)
+
+    def getConfDict(self,confname = 'root'):
+        if confname == 'root':
+            return self.CONFS
+        return self.CONFS.get(confname,self.NOTFOUND)
     
-    def read(self,filenames):
-        return self.CPARSER.read(filenames)
+    def getSectionDict(self,confname,secname):
+    	return self.getConfDict(confname).get(secname,self.NOTFOUND)
     
-    def loadConf(self,filenames):
-        self.read(filenames)
-        confnames = self.CPARSER.options(self.PARCONFSTR)
-        for confname in confnames:
-            self.CONFS[confname] = self.getEX(confname)
+    def getOptionDict(self,confname,secname,optname):
+    	return self.getSectionDict(confname, secname).get(optname,self.NOTFOUND)
+    
+    def getNotFound(self,*p):
+    	return 'NotFound'
+    
+    def getDictByPath(self,pathstr='root'):
+    	nodes = pathstr.split('.')
+    	nodenum = len(nodes)
+    	if nodenum > 4:
+    		nodenum = 4
+    	return self.GETFUNCTIONS[nodenum](*nodes)
+
+def test():
+    cp = ConfigParserEX('/home/caphael/workspace/PyBSMSStat.my7g/conf/LineParsers.conf')
+    pprint.pprint(cp.getDictByPath('lineparser.sendlog.order'))
+
+
+if __name__=='__main__':
+    test()

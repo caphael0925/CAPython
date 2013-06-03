@@ -27,16 +27,16 @@ class LineParserBase():
     TARGET = []    #放数据的字典
     DEFMUL_LIMITS = 1000
     
-    TARGET_TYPE = 'R'  
+    TARGET_TYPE = 'C'  
     DATAPOS = None
     #输出数据在输入行中对应的位置下标，维度根据LINECNT而定
     
-    def __init__(self,confparser,targettype = 'R'):
+    def __init__(self,confdict,targettype = 'R'):
         '''
         Constructor
         '''
         self.TARGET_TYPE = targettype
-        self.CONFS = confparser.CONFS
+        self.CONFS = confdict
         posstr = self.CONFS.get('position_string','UNKNOWN')
         self.parsePos(posstr)
         self.METAJSONSTR = self.CONFS.get('output_metadata','UNKNOWN')
@@ -168,16 +168,26 @@ class LineParserBase():
         else:
             return self.getTableDataByColumn()
             
-    def getTableDataByColumn(self):
+    def getTableDataByColumn_old(self):
         tabdict = copy.deepcopy(self.TABMETA)
+        tabdict['style'] = 'C'
         coldicts = tabdict.get('columns')
         for i in range(len(coldicts)):
             coldicts[i]['data'] = self.getOutCList()[i]
         return tabdict
 
+    def getTableDataByColumn(self):
+        tabdict = {}
+        tabdict['mdata'] = copy.deepcopy(self.TABMETA)
+        tabdict['mdata']['style'] = 'C'
+        tabdict['data'] = self.getOutCList()
+        return tabdict
+
     def getTableDataByRow(self):
-        tabdict = copy.deepcopy(self.TABMETA)
-        tabdict['row_data'] = self.getOutRList()
+        tabdict = {}
+        tabdict['mdata'] = copy.deepcopy(self.TABMETA)
+        tabdict['mdata']['style'] ='R'
+        tabdict['data'] = self.getOutRList()
         return tabdict
 
 def test():
