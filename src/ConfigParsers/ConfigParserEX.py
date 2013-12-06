@@ -10,13 +10,14 @@ from CommonUtils.NotFound import NotFound
 class ConfigParserEX():
     PARCONFSTR=''
     CONFFILE = ''
-    CONFS = {}
+    
     CPARSER = ConfigParser.ConfigParser()
     NOTFOUND = NotFound('NotFound')
-    GETFUNCTIONS = []
+    GETFUNCTIONS = None
 
     
     def __init__(self,*conffiles):
+        self.CONFS = {}
         self.GETFUNCTIONS = [self.getConfDict,self.getConfDict,self.getSectionDict,self.getOptionDict,self.getNotFound]
         for conffile in conffiles:
             self.loadConf(conffile)
